@@ -1,0 +1,36 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch_depth: 0
+
+    - name: Docker Login
+      env:
+        docker_login: ${{ secrets.DOCKER_USER }}
+        docker_password: ${{ secrets.DOCKER_PASSWORD }}
+      run: |
+        echo "Iniciando Login"
+        docker login -u $docker_login -p $docker_password
+        echo "Fin de login"
+
+    - name: Build Docker Image
+      run: |
+        docker build -t monomark/redes2web:flaskv2 .
+
+    - name: Push Docker Image
+      run: |
+        docker push monomark/redes2web:flaskv2
