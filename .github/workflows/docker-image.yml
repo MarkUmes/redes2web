@@ -1,36 +1,81 @@
-name: Docker Image CI
+name: CI/CD Flask Docker AWS
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  test:
+    name: Pruebas de Flask
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
 
   build:
-
+    name: Construir y publicar en Docker Hub
+    needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch_depth: 0
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Iniciar sesion en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Construir y publicar la imagen
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            monomark/redes2web:aws-${{ github.sha }}
+            monomark/redes2web:aws-latest
+          build-args: BUILD_SHA=${{ github.sha }}
 
-    - name: Docker Login
-      env:
-        docker_login: ${{ secrets.DOCKER_USER }}
-        docker_password: ${{ secrets.DOCKER_PASSWORD }}
-      run: |
-        echo "Iniciando Login"
-        docker login -u $docker_login -p $docker_password
-        echo "Fin de login"
-
-    - name: Build Docker Image
-      run: |
-        docker build -t monomark/redes2web:flaskv2 .
-
-    - name: Push Docker Image
-      run: |
-        docker push monomark/redes2web:flaskv2
+  deploy:
+    name: Desplegar y verificar en Amazon EC2
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+      IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+    steps:
+      - name: Configurar conexion SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2_deploy
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/ec2_deploy ~/.ssh/known_hosts
+      - name: Actualizar contenedor Docker en AWS
+        run: |
+          ssh -i ~/.ssh/ec2_deploy -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "deploy-redes2web@$EC2_HOST" "$IMAGE_DIGEST $GITHUB_SHA"
+      - name: Verificar pagina publica y commit desplegado
+        run: |
+          curl --fail --retry 5 --retry-delay 3 --retry-connrefused \
+            "http://$EC2_HOST:5000/health" -o health.json
+          python -c 'import json,os; d=json.load(open("health.json")); assert d["status"]=="ok"; assert d["revision"]==os.environ["GITHUB_SHA"]; print(json.dumps(d,indent=2))'
+          curl --fail "http://$EC2_HOST:5000/"
