@@ -2,7 +2,7 @@ import os
 from flask import Flask, jsonify, render_template_string
 
 app = Flask(__name__)
-VERSION = "v1"
+VERSION = "v2"
 
 
 @app.get("/")
@@ -10,7 +10,7 @@ def root():
     return render_template_string("""<!doctype html>
 <html lang="es"><meta charset="utf-8"><title>Flask en AWS</title>
 <style>body{font:22px Arial;margin:60px;line-height:1.6}code{font-size:18px}</style>
-<h1>pagina de prueba</h1>
+<h1>pagina de prueba actualizada desde GitHub</h1>
 <h2>CI/CD en la nube AWS</h2>
 <p>Version: {{ version }}</p>
 <p>Commit: <code>{{ revision }}</code></p>
