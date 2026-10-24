@@ -41,14 +41,14 @@ docker run -d --name "$NAME" --restart unless-stopped \
   --cap-drop ALL --security-opt no-new-privileges \
   --memory 256m --cpus 1 --pids-limit 100 \
   --log-opt max-size=5m --log-opt max-file=2 \
-  -p 5000:5000 "$IMAGE"
+  -p 3300:5000 "$IMAGE"
 for attempt in $(seq 1 30); do
   STATUS=$(docker inspect "$NAME" --format '{{.State.Health.Status}}')
   [[ "$STATUS" == healthy ]] && break
   sleep 2
 done
 [[ "$STATUS" == healthy ]]
-curl --fail --silent http://127.0.0.1:5000/health
+curl --fail --silent http://127.0.0.1:3300/health
 echo
 docker ps --filter "name=^/$NAME$" --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
 echo "Despliegue verificado en Amazon EC2. Commit: $REVISION"
